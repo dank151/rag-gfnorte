@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG de auditoría de cartera</title>
+<style>
+  body{font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:860px;margin:2rem auto;padding:0 1rem;color:#222}
+  h1{font-size:1.4rem;margin-bottom:.2rem} .sub{color:#666;margin-top:0}
+  textarea{width:100%;height:90px;font:inherit;padding:.5rem;box-sizing:border-box}
+  .fila{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin:.6rem 0}
+  button{background:#2F5496;color:#fff;border:0;padding:.55rem 1.2rem;border-radius:6px;font:inherit;cursor:pointer}
+  button:disabled{opacity:.5} input[type=password]{padding:.4rem;min-width:14rem}
+  pre{background:#f4f4f4;padding:.8rem;white-space:pre-wrap;border-radius:6px;overflow-x:auto}
+  .meta{font-size:.9rem;color:#444} #estado{font-size:.9rem}
+</style>
+</head>
+<body>
+<h1>RAG de auditoría de cartera de crédito</h1>
+<p class="sub">Informe de riesgos GFNorte 2T26 (págs. impresas 7 a 16) frente al Anexo 33, Criterio B-6.</p>
+<p id="estado">Verificando el servicio…</p>
+<textarea id="pregunta" placeholder="Escribe una pregunta, por ejemplo: ¿Cuál es la cartera Etapa 3 del sector Servicios?"></textarea>
+<div class="fila">
+  <label><input type="checkbox" id="modelo"> Usar el modelo (gasta crédito)</label>
+  <input type="password" id="token" placeholder="Clave de la aplicación" style="display:none">
+  <button id="boton">Responder</button>
+</div>
+<div id="salida"></div>
+<script>
+const $ = id => document.getElementById(id);
+$("modelo").onchange = () => { $("token").style.display = $("modelo").checked ? "inline-block" : "none"; };
+async function revisar(){
+  try{
+    const r = await fetch("/ready");
+    if(r.ok){ $("estado").textContent = "Servicio listo."; $("boton").disabled = false; return; }
+    const d = await r.json();
+    $("estado").textContent = d.detail || "Cargando…"; $("boton").disabled = r.status !== 503 && r.status !== 200;
+    if(r.status === 503) setTimeout(revisar, 4000);
+  }catch(e){ $("estado").textContent = "Despertando el servicio (puede tardar cerca de un minuto)…"; setTimeout(revisar, 5000); }
+}
+revisar();
+$("boton").onclick = async () => {
+  const pregunta = $("pregunta").value.trim(); if(pregunta.length < 3) return;
+  $("boton").disabled = true; $("salida").innerHTML = "<p>Procesando…</p>";
+  const cab = {"Content-Type":"application/json"};
+  if($("modelo").checked) cab["X-App-Token"] = $("token").value;
+  try{
+    const r = await fetch("/ask", {method:"POST", headers:cab, body:JSON.stringify({pregunta, usar_modelo:$("modelo").checked})});
+    const d = await r.json();
+    if(!r.ok){ $("salida").innerHTML = "<p><b>Error " + r.status + ":</b> " + (d.detail && d.detail.map ? d.detail.map(x=>x.msg).join("; ") : d.detail) + "</p>"; }
+    else{
+      const t = d.tiempos_ms || {}; const m = d.modelo;
+      $("salida").innerHTML = "<p class='meta'><b>Ruta:</b> " + d.ruta + " · <b>estado:</b> " + d.estado + (d.motivo ? " · <b>motivo:</b> " + d.motivo : "") +
+        "<br><b>Recorrido:</b> " + d.pasos.join(" → ") + "<br><b>Tiempo total:</b> " + (t.total/1000).toFixed(2) + " s" +
+        (m ? "<br><b>Modelo:</b> " + m.nombre + " · tokens: " + JSON.stringify(m.tokens) + " · caché: " + m.desde_cache : "") +
+        (d.verificacion ? "<br><b>Verificación:</b> " + (d.verificacion.aprobada ? "aprobada" : "rechazada") + " · fidelidad " + d.verificacion.fidelidad : "") + "</p><pre></pre>";
+      $("salida").querySelector("pre").textContent = d.respuesta;
+    }
+  }catch(e){ $("salida").innerHTML = "<p>No se pudo contactar el servicio.</p>"; }
+  $("boton").disabled = false;
+};
+</script>
+</body>
+</html>

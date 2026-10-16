@@ -1,0 +1,9 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.env
+*.env
+credenciales.env
+.pytest_cache/
+data/cache_respuestas_f5.json
